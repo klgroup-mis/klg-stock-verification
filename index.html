@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>KLG Physical Stock Verification</title>
+<style>
+  :root { --pri:#1f4e79; --ok:#1e8e3e; --warn:#e8a200; --bad:#d93025; --bg:#f3f5f8; --card:#fff; --mut:#667; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); color:#222; font-size:15px; }
+  header { background:var(--pri); color:#fff; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:5; }
+  header h1 { font-size:16px; margin:0; }
+  header small { opacity:.85; font-size:12px; }
+  header button { background:transparent; color:#fff; border:1px solid rgba(255,255,255,.6); padding:4px 10px; border-radius:6px; font-size:12px; }
+  main { padding:14px; max-width:640px; margin:0 auto; }
+  .card { background:var(--card); border-radius:12px; padding:14px; margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  .hidden { display:none !important; }
+  label { display:block; font-size:13px; color:var(--mut); margin:10px 0 4px; }
+  input, select, textarea { width:100%; padding:11px; font-size:15px; border:1px solid #ccd; border-radius:8px; background:#fff; }
+  textarea { min-height:70px; }
+  .btn { display:block; width:100%; padding:13px; font-size:16px; font-weight:600; border:0; border-radius:10px; background:var(--pri); color:#fff; margin-top:12px; text-align:center; cursor:pointer; }
+  .btn.sec { background:#e6ecf3; color:var(--pri); }
+  .btn.link { background:transparent; color:var(--bad); font-weight:500; font-size:14px; }
+  .btn:disabled { opacity:.45; }
+  .steps { display:flex; gap:6px; margin-bottom:12px; }
+  .steps div { flex:1; height:5px; border-radius:3px; background:#d5dbe3; }
+  .steps div.on { background:var(--pri); }
+  .info { font-size:14px; line-height:1.5; }
+  .info b { color:var(--pri); }
+  .pill { display:inline-block; padding:2px 9px; border-radius:20px; font-size:12px; font-weight:600; color:#fff; }
+  .p-ok { background:var(--ok); } .p-warn { background:var(--warn); } .p-bad { background:var(--bad); } .p-mut { background:#889; }
+  #preview, #stockPreview { width:100%; border-radius:10px; margin-top:10px; }
+  .sku { border:1px solid #e1e5ea; border-radius:10px; padding:10px; margin-bottom:8px; }
+  .sku.filled { border-color:var(--pri); background:#f6f9fc; }
+  .sku-name { font-weight:600; font-size:14px; }
+  .sku-code { color:var(--mut); font-size:12px; }
+  .batch { display:grid; grid-template-columns: 1fr 1.4fr auto; gap:6px; margin-top:8px; align-items:center; }
+  .batch input { padding:9px; font-size:14px; }
+  .batch .x { border:0; background:#f1d6d4; color:var(--bad); border-radius:8px; width:34px; height:38px; font-size:18px; }
+  .band { grid-column:1 / -1; font-size:12px; margin-top:-2px; }
+  .add { border:0; background:transparent; color:var(--pri); font-weight:600; padding:6px 0 0; font-size:13px; }
+  #toast { position:fixed; left:12px; right:12px; bottom:16px; padding:12px 14px; border-radius:10px; color:#fff; font-size:14px; z-index:20; box-shadow:0 4px 12px rgba(0,0,0,.25); }
+  #toast.err { background:var(--bad); } #toast.ok { background:var(--ok); } #toast.inf { background:#333; }
+  .timer { font-size:13px; color:var(--mut); }
+  .big { font-size:22px; font-weight:700; margin:6px 0; }
+  .row2 { display:flex; gap:8px; } .row2 > * { flex:1; }
+  #camModal { position:fixed; inset:0; background:#000; z-index:40; display:flex; flex-direction:column; justify-content:center; padding:12px; }
+  #camVideo { width:100%; max-height:78vh; object-fit:contain; background:#000; border-radius:10px; }
+  #camVideo.mirror { transform:scaleX(-1); }
+  #camModal .row2 { max-width:640px; width:100%; margin:0 auto; }
+  #camTitle { color:#fff; text-align:center; font-weight:600; margin-bottom:8px; }
+  .fallback { display:block; text-align:center; margin-top:10px; padding:11px; border:1px dashed var(--pri); border-radius:10px; color:var(--pri); font-weight:600; }
+  #busy { position:fixed; inset:0; background:rgba(255,255,255,.7); display:flex; align-items:center; justify-content:center; z-index:30; font-weight:600; color:var(--pri); text-align:center; padding:20px; }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Physical Stock Verification</h1><small id="hdrUser">KL Group</small></div>
+  <button id="btnLogout" class="hidden">Logout</button>
+</header>
+
+<main>
+  <!-- LOGIN -->
+  <section id="scrLogin" class="card">
+    <label>Emp ID</label>
+    <input id="empId" autocomplete="username">
+    <label>PIN</label>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="current-password">
+    <button class="btn" id="btnLogin">Login</button>
+  </section>
+
+  <!-- SELECT DB -->
+  <section id="scrSelect" class="hidden">
+    <div class="steps"><div class="on"></div><div></div><div></div><div></div></div>
+    <div class="card">
+      <label>Division</label>
+      <select id="selDiv"></select>
+      <label>Search DB</label>
+      <input id="dbSearch" placeholder="Type DB name or town">
+      <label>DB Name</label>
+      <select id="selDb"></select>
+      <label>Location</label>
+      <input id="dbLoc" readonly>
+      <button class="btn" id="btnToCheckin" disabled>Next: Check-in at DB</button>
+    </div>
+  </section>
+
+  <!-- CHECK-IN -->
+  <section id="scrCheckin" class="hidden">
+    <div class="steps"><div class="on"></div><div class="on"></div><div></div><div></div></div>
+    <div class="card info" id="ciInfo"></div>
+    <div class="card">
+      <div class="info">Take a live selfie <b>inside the DB premises</b>. The photo is stamped with time, GPS and DB name.</div>
+      <input type="file" id="selfieInput" accept="image/*" capture="user" class="hidden">
+      <button class="btn sec" id="btnSelfie">📷 Take selfie</button>
+      <label for="selfieInput" id="selfieFallback" class="fallback hidden">📱 Camera blocked? Tap here to open phone camera</label>
+      <div id="gpsStatus" class="timer" style="margin-top:8px"></div>
+      <img id="preview" class="hidden" alt="">
+      <div id="reasonBox" class="hidden">
+        <label id="reasonLbl"></label>
+        <textarea id="reason" placeholder="Why are you away from the DB location?"></textarea>
+      </div>
+      <button class="btn" id="btnCheckin" disabled>Check in</button>
+      <button class="btn link" id="btnBackSelect">← Change DB</button>
+    </div>
+  </section>
+
+  <!-- STOCK ENTRY -->
+  <section id="scrStock" class="hidden">
+    <div class="steps"><div class="on"></div><div class="on"></div><div class="on"></div><div></div></div>
+    <div class="card info">
+      <div id="stInfo"></div>
+      <div class="timer" id="timer"></div>
+    </div>
+    <div class="card">
+      <input id="skuSearch" placeholder="Search SKU">
+      <div class="timer" id="skuCount" style="margin:8px 0"></div>
+      <div id="skuList"></div>
+    </div>
+    <div class="card">
+      <div class="info" id="stockPhotoLbl">Godown / stock photo</div>
+      <input type="file" id="stockInput" accept="image/*" capture="environment" class="hidden">
+      <button class="btn sec" id="btnStockPhoto">📷 Take stock photo</button>
+      <label for="stockInput" id="stockFallback" class="fallback hidden">📱 Camera blocked? Tap here to open phone camera</label>
+      <img id="stockPreview" class="hidden" alt="">
+    </div>
+    <div class="card">
+      <div class="info">After the count, the DB owner gets an OTP on his mobile. Enter it to submit.</div>
+      <button class="btn sec" id="btnOtp">Send OTP to DB owner</button>
+      <div id="otpMsg" class="timer" style="margin-top:8px"></div>
+      <label>OTP from DB owner</label>
+      <input id="otp" inputmode="numeric" maxlength="6">
+      <button class="btn" id="btnSubmit">Submit verification</button>
+      <button class="btn link" id="btnCancelVisit">Cancel this visit</button>
+    </div>
+  </section>
+
+  <!-- DONE -->
+  <section id="scrDone" class="hidden">
+    <div class="steps"><div class="on"></div><div class="on"></div><div class="on"></div><div class="on"></div></div>
+    <div class="card info" id="doneInfo"></div>
+    <button class="btn" id="btnNew">Start new visit</button>
+  </section>
+</main>
+
+<div id="camModal" class="hidden">
+  <div id="camTitle">Camera</div>
+  <video id="camVideo" autoplay playsinline muted></video>
+  <div class="row2">
+    <button class="btn sec" id="camCancel">Cancel</button>
+    <button class="btn" id="camShot">📸 Capture</button>
+  </div>
+</div>
+<div id="toast" class="hidden"></div>
+<div id="busy" class="hidden"></div>
+
+<script>
+/* If you host this page outside Apps Script (e.g. GitHub Pages), put the web app /exec URL here. */
+const API_URL = '';
+
+const $ = id => document.getElementById(id);
+const S = { token:null, boot:null, visit:null, selfie:null, pos:null, gpsPromise:null, stockPhoto:null, batches:{}, timerId:null, otpCooldown:0 };
+
+/* ---------- storage (may be blocked in some browsers) ---------- */
+function store(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function deviceId() {
+  let id = load('klg_pv_device');
+  if (!id) {
+    id = 'D-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    store('klg_pv_device', id);
+    if (load('klg_pv_device') !== id) return 'NA';   // storage not available
+  }
+  return id;
+}
+
+/* ---------- API ---------- */
+function api(fn, ...args) {
+  return new Promise((resolve, reject) => {
+    const done = r => (r && r.error) ? reject(new Error(r.error)) : resolve(r);
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run.withSuccessHandler(done).withFailureHandler(reject)[fn](...args);
+    } else {
+      fetch(API_URL, { method:'POST', body: JSON.stringify({ fn, args }) })
+        .then(r => r.json()).then(done).catch(reject);
+    }
+  });
+}
+
+/* ---------- UI helpers ---------- */
+let toastT;
+function toast(msg, type) {
+  const t = $('toast'); t.textContent = msg; t.className = type || 'inf';
+  clearTimeout(toastT); toastT = setTimeout(() => t.className = 'hidden', type === 'err' ? 6000 : 3500);
+}
+function busy(msg) { const b = $('busy'); if (msg) { b.textContent = msg; b.classList.remove('hidden'); } else b.classList.add('hidden'); }
+function show(id) {
+  ['scrLogin','scrSelect','scrCheckin','scrStock','scrDone'].forEach(s => $(s).classList.toggle('hidden', s !== id));
+  window.scrollTo(0, 0);
+}
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fail(e) {
+  busy();
+  const m = (e && e.message) || String(e);
+  if (m.indexOf('SESSION_EXPIRED') >= 0) { logout(); toast('Session expired. Please login again.', 'err'); return; }
+  toast(m, 'err');
+}
+
+/* ---------- GPS ---------- */
+function getBestPosition(targetAcc, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error('GPS not supported on this phone'));
+    let best = null, watch;
+    const finish = () => {
+      navigator.geolocation.clearWatch(watch); clearTimeout(timer);
+      if (best && best.acc <= targetAcc) resolve(best);
+      else if (best) reject(new Error('GPS accuracy only ' + Math.round(best.acc) + ' m. Move to open sky and retry.'));
+      else reject(new Error('Could not get location. Turn on GPS / allow location and retry.'));
+    };
+    const timer = setTimeout(finish, timeoutMs || 25000);
+    watch = navigator.geolocation.watchPosition(p => {
+      const c = { lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy };
+      if (!best || c.acc < best.acc) best = c;
+      if ($('gpsStatus')) $('gpsStatus').textContent = 'GPS accuracy: ' + Math.round(best.acc) + ' m';
+      if (best.acc <= Math.min(targetAcc, 30)) finish();
+    }, err => {
+      if (err.code === 1) { navigator.geolocation.clearWatch(watch); clearTimeout(timer); reject(new Error('Location permission denied. Allow location for this site.')); }
+    }, { enableHighAccuracy:true, maximumAge:0, timeout:timeoutMs || 25000 });
+  });
+}
+
+/* ---------- Live in-app camera (no gallery possible) ---------- */
+let camStream = null, camResolve = null, camReject = null;
+function openCamera(facing, title) {
+  return new Promise(async (resolve, reject) => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return reject(new Error('CAMERA_UNSUPPORTED'));
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false
+      });
+    } catch (e) {
+      return reject(new Error(e && e.name === 'NotAllowedError' ? 'CAMERA_DENIED' : 'CAMERA_UNSUPPORTED'));
+    }
+    camResolve = resolve; camReject = reject;
+    const v = $('camVideo');
+    v.classList.toggle('mirror', facing === 'user');
+    v.srcObject = camStream;
+    $('camTitle').textContent = title || 'Camera';
+    $('camModal').classList.remove('hidden');
+    try { await v.play(); } catch (e) {}
+  });
+}
+function closeCamera() {
+  if (camStream) camStream.getTracks().forEach(t => t.stop());
+  camStream = null;
+  $('camVideo').srcObject = null;
+  $('camModal').classList.add('hidden');
+}
+$('camShot').onclick = () => {
+  const v = $('camVideo');
+  if (!v.videoWidth) return toast('Camera not ready yet', 'err');
+  const cv = document.createElement('canvas');
+  cv.width = v.videoWidth; cv.height = v.videoHeight;
+  cv.getContext('2d').drawImage(v, 0, 0);
+  closeCamera();
+  if (camResolve) camResolve(cv);
+  camResolve = camReject = null;
+};
+$('camCancel').onclick = () => {
+  closeCamera();
+  if (camReject) camReject(new Error('CANCELLED'));
+  camResolve = camReject = null;
+};
+
+/* ---------- Photo: resize + burn-in stamp (source = canvas or File) ---------- */
+function loadSource(src) {
+  if (src instanceof HTMLCanvasElement) return Promise.resolve(src);
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(src);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read photo')); };
+    img.src = url;
+  });
+}
+async function stampPhoto(src, lines) {
+  const img = await loadSource(src);
+  const max = 1280, sc = Math.min(1, max / Math.max(img.width, img.height));
+  const w = Math.round(img.width * sc), h = Math.round(img.height * sc);
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+  const fs = Math.max(14, Math.round(w / 30)), lh = Math.round(fs * 1.35);
+  const bh = lh * lines.length + fs;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, h - bh, w, bh);
+  ctx.fillStyle = '#fff'; ctx.font = '600 ' + fs + 'px Arial'; ctx.textBaseline = 'top';
+  lines.forEach((t, i) => ctx.fillText(t, Math.round(fs / 2), h - bh + Math.round(fs / 2) + i * lh, w - fs));
+  return cv.toDataURL('image/jpeg', 0.75);
+}
+function cameraFailed(err, fallbackId) {
+  if (err.message === 'CANCELLED') return;
+  $(fallbackId).classList.remove('hidden');
+  toast(err.message === 'CAMERA_DENIED'
+    ? 'Camera permission blocked. Allow Camera for this site in Chrome settings, or use the button below.'
+    : 'Live camera not available here. Use the "open phone camera" button below.', 'err');
+}
+function isFresh(file) {
+  const age = (Date.now() - (file.lastModified || 0)) / 1000;
+  return age >= -60 && age <= S.boot.cfg.photoAgeSec;
+}
+
+/* ---------- Login / bootstrap ---------- */
+$('btnLogin').onclick = () => {
+  busy('Logging in…');
+  api('apiLogin', $('empId').value, $('pin').value, deviceId()).then(r => {
+    S.token = r.token; store('klg_pv_token', r.token);
+    $('pin').value = '';
+    return boot();
+  }).catch(fail);
+};
+function boot() {
+  busy('Loading…');
+  return api('apiBootstrap', S.token).then(b => {
+    busy(); S.boot = b;
+    $('hdrUser').textContent = b.user.name + ' (' + b.user.empId + ')';
+    $('btnLogout').classList.remove('hidden');
+    if (!b.divisions.length) { toast('No DBs mapped to you. Contact MIS.', 'err'); }
+    fillDivisions();
+    if (b.openVisit) { S.visit = b.openVisit; startStock(true); }
+    else show('scrSelect');
+  });
+}
+function logout() {
+  S.token = null; store('klg_pv_token', null); clearInterval(S.timerId);
+  $('hdrUser').textContent = 'KL Group'; $('btnLogout').classList.add('hidden');
+  show('scrLogin');
+}
+$('btnLogout').onclick = logout;
+
+/* ---------- Select DB ---------- */
+function fillDivisions() {
+  const sel = $('selDiv');
+  sel.innerHTML = '<option value="">— Select Division —</option>' +
+    S.boot.divisions.map(d => '<option value="' + esc(d) + '">' + esc(d) + ' (' + S.boot.dbs.filter(x => x.division === d).length + ' DBs)</option>').join('');
+  fillDbs();
+}
+function fillDbs() {
+  const div = $('selDiv').value, q = $('dbSearch').value.toLowerCase().trim();
+  $('dbSearch').disabled = !div;
+  if (!div) {
+    $('selDb').innerHTML = '<option value="">— Select division first —</option>';
+    return onDb();
+  }
+  const list = S.boot.dbs.filter(d => d.division === div && (!q || (d.db + ' ' + d.location).toLowerCase().indexOf(q) >= 0));
+  $('selDb').innerHTML = '<option value="">— Select DB (' + list.length + ') —</option>' +
+    list.map(d => '<option value="' + esc(d.db) + '">' + esc(d.db) + (d.location ? ' — ' + esc(d.location) : '') + '</option>').join('');
+  onDb();
+}
+function curDb() { return S.boot.dbs.find(d => d.division === $('selDiv').value && d.db === $('selDb').value); }
+function onDb() {
+  const d = curDb();
+  $('dbLoc').value = d ? d.location : '';
+  $('btnToCheckin').disabled = !d;
+}
+$('selDiv').onchange = () => { $('dbSearch').value = ''; fillDbs(); };
+$('dbSearch').oninput = fillDbs;
+$('selDb').onchange = onDb;
+
+$('btnToCheckin').onclick = () => {
+  const d = curDb(); if (!d) return;
+  if (!d.hasMobile) toast('Note: owner mobile missing in DB master — OTP cannot be sent. Inform MIS.', 'err');
+  S.selfie = null; S.pos = null; S.gpsPromise = null;
+  $('preview').classList.add('hidden'); $('reasonBox').classList.add('hidden'); $('reason').value = '';
+  $('btnCheckin').disabled = true; $('gpsStatus').textContent = '';
+  $('ciInfo').innerHTML = '<b>' + esc(d.db) + '</b><br>' + esc(d.division) + (d.location ? ' · ' + esc(d.location) : '');
+  show('scrCheckin');
+  S.gpsPromise = getBestPosition(S.boot.cfg.minAcc, 25000);   // start warming GPS now
+  S.gpsPromise.catch(() => {});
+};
+$('btnBackSelect').onclick = () => show('scrSelect');
+
+/* ---------- Selfie + check-in ---------- */
+$('btnSelfie').onclick = async () => {
+  if (!S.gpsPromise) { S.gpsPromise = getBestPosition(S.boot.cfg.minAcc, 25000); S.gpsPromise.catch(() => {}); }
+  try { await processSelfie(await openCamera('user', 'Selfie at DB')); }
+  catch (err) { cameraFailed(err, 'selfieFallback'); }
+};
+$('selfieInput').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  if (!isFresh(f)) { toast('Please take a live photo with the camera. Old / gallery photos are not allowed.', 'err'); return; }
+  await processSelfie(f);
+};
+async function processSelfie(f) {
+  try {
+    busy('Getting GPS location…');
+    let pos;
+    try { pos = await S.gpsPromise; }
+    catch (err) { S.gpsPromise = getBestPosition(S.boot.cfg.minAcc, 25000); pos = await S.gpsPromise; }
+    busy('Stamping photo…');
+    const t = await api('apiServerTime', S.token);
+    const d = curDb();
+    S.pos = pos;
+    S.selfie = await stampPhoto(f, [
+      S.boot.user.name + ' (' + S.boot.user.empId + ') · CHECK-IN',
+      d.division + ' | ' + d.db,
+      (d.location || '') ,
+      'Lat ' + pos.lat.toFixed(6) + ', Lng ' + pos.lng.toFixed(6) + ' (±' + Math.round(pos.acc) + ' m)',
+      t.now + ' IST'
+    ].filter(Boolean));
+    $('preview').src = S.selfie; $('preview').classList.remove('hidden');
+    $('btnCheckin').disabled = false;
+    busy();
+  } catch (err) { S.gpsPromise = null; fail(err); }
+}
+$('btnCheckin').onclick = () => {
+  const d = curDb();
+  if (!S.selfie || !S.pos) return toast('Take the selfie first', 'err');
+  busy('Checking in…');
+  api('apiCheckIn', S.token, { division:d.division, db:d.db, lat:S.pos.lat, lng:S.pos.lng, acc:S.pos.acc, selfie:S.selfie, reason:$('reason').value })
+    .then(r => {
+      busy();
+      if (r.needReason) {
+        $('reasonLbl').textContent = 'You are ' + r.distance + ' m from this DB\'s saved location. This visit will be marked REJECTED for review unless MIS accepts your reason.';
+        $('reasonBox').classList.remove('hidden'); $('reason').focus();
+        return toast('Enter a reason and tap Check in again', 'err');
+      }
+      S.visit = r;
+      if (r.geoStatus === 'FIRST_CAPTURE') toast('First visit: this DB\'s location is saved and sent to MIS for approval.', 'ok');
+      else toast('Checked in (' + r.distance + ' m from DB)', 'ok');
+      startStock(false);
+    }).catch(fail);
+};
+
+/* ---------- Stock entry ---------- */
+function startStock(resumed) {
+  const v = S.visit;
+  S.batches = {}; S.stockPhoto = null; $('otp').value = ''; $('otpMsg').textContent = ''; $('skuSearch').value = '';
+  $('stockPreview').classList.add('hidden');
+  $('stockPhotoLbl').textContent = 'Godown / stock photo' + (S.boot.cfg.requireStockPhoto ? ' (required)' : ' (optional)');
+  $('stInfo').innerHTML = (resumed ? '<span class="pill p-mut">Resumed</span> ' : '') +
+    '<b>' + esc(v.db) + '</b><br>' + esc(v.division) + (v.location ? ' · ' + esc(v.location) : '') +
+    '<br>Visit ID: ' + esc(v.visitId);
+  renderSkus();
+  clearInterval(S.timerId);
+  const tick = () => {
+    const min = (Date.now() - v.checkInAtMs) / 60000, need = S.boot.cfg.minMinutes;
+    const mm = Math.floor(min), ss = Math.floor((min - mm) * 60);
+    $('timer').textContent = 'On site: ' + mm + 'm ' + String(ss).padStart(2, '0') + 's' + (min < need ? ' · submit allowed after ' + need + ' min' : ' ✓');
+  };
+  tick(); S.timerId = setInterval(tick, 1000);
+  show('scrStock');
+}
+function skusForVisit() { return S.boot.skus.filter(k => k.division === S.visit.division); }
+function skuKey(k) { return k.code || k.name; }
+function renderSkus() {
+  const q = $('skuSearch').value.toLowerCase().trim();
+  const list = skusForVisit().filter(k => !q || (k.name + ' ' + k.code).toLowerCase().indexOf(q) >= 0);
+  $('skuList').innerHTML = list.map(k => {
+    const key = skuKey(k);
+    const b = S.batches[key] || (S.batches[key] = [{ qty:'', expiry:'' }]);
+    const filled = b.some(x => x.qty !== '');
+    return '<div class="sku' + (filled ? ' filled' : '') + '" data-key="' + esc(key) + '">' +
+      '<div class="sku-name">' + esc(k.name) + '</div>' + (k.code ? '<div class="sku-code">' + esc(k.code) + '</div>' : '') +
+      b.map((x, i) => '<div class="batch" data-i="' + i + '">' +
+        '<input type="number" inputmode="numeric" min="0" step="1" placeholder="Qty (pcs)" data-f="qty" value="' + esc(x.qty) + '">' +
+        '<input type="date" data-f="expiry" value="' + esc(x.expiry) + '">' +
+        '<button class="x" data-act="del" title="Remove batch">×</button>' +
+        '<div class="band">' + bandHtml(x) + '</div></div>').join('') +
+      '<button class="add" data-act="add">+ Add another expiry batch</button></div>';
+  }).join('') || '<div class="timer">No SKUs found for this division. Ask MIS to fill SKU_Master.</div>';
+  updateCount();
+}
+function daysTo(expiry) {
+  if (!expiry) return null;
+  const t = new Date(); t.setHours(0,0,0,0);
+  return Math.round((new Date(expiry + 'T00:00:00') - t) / 86400000);
+}
+function bandHtml(x) {
+  const d = daysTo(x.expiry); if (d === null || x.qty === '' || Number(x.qty) === 0) return '';
+  if (d < 0) return '<span class="pill p-bad">Expired ' + (-d) + ' days ago</span>';
+  if (d <= 30) return '<span class="pill p-bad">' + d + ' days to expiry</span>';
+  if (d <= 60) return '<span class="pill p-warn">' + d + ' days to expiry</span>';
+  if (d <= 90) return '<span class="pill" style="background:#c9b200">' + d + ' days to expiry</span>';
+  return '<span class="pill p-ok">' + d + ' days to expiry</span>';
+}
+function updateCount() {
+  let n = 0, q = 0;
+  Object.keys(S.batches).forEach(k => { const f = S.batches[k].filter(x => x.qty !== ''); if (f.length) n++; f.forEach(x => q += Number(x.qty) || 0); });
+  $('skuCount').textContent = n + ' SKU(s) entered · ' + q + ' pcs total';
+}
+$('skuSearch').oninput = renderSkus;
+$('skuList').addEventListener('input', e => {
+  const el = e.target, f = el.dataset.f; if (!f) return;
+  const card = el.closest('.sku'), i = Number(el.closest('.batch').dataset.i);
+  const b = S.batches[card.dataset.key][i];
+  b[f] = el.value;
+  el.closest('.batch').querySelector('.band').innerHTML = bandHtml(b);
+  card.classList.toggle('filled', S.batches[card.dataset.key].some(x => x.qty !== ''));
+  updateCount();
+});
+$('skuList').addEventListener('click', e => {
+  const act = e.target.dataset.act; if (!act) return;
+  const key = e.target.closest('.sku').dataset.key, arr = S.batches[key];
+  if (act === 'add') arr.push({ qty:'', expiry:'' });
+  if (act === 'del') { const i = Number(e.target.closest('.batch').dataset.i); arr.splice(i, 1); if (!arr.length) arr.push({ qty:'', expiry:'' }); }
+  renderSkus();
+});
+
+/* stock photo */
+$('btnStockPhoto').onclick = async () => {
+  try { await processStock(await openCamera('environment', 'Godown / stock photo')); }
+  catch (err) { cameraFailed(err, 'stockFallback'); }
+};
+$('stockInput').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  if (!isFresh(f)) return toast('Please take a live photo with the camera.', 'err');
+  await processStock(f);
+};
+async function processStock(f) {
+  try {
+    busy('Stamping photo…');
+    const t = await api('apiServerTime', S.token);
+    S.stockPhoto = await stampPhoto(f, [S.boot.user.name + ' · STOCK', S.visit.division + ' | ' + S.visit.db, t.now + ' IST', S.visit.visitId]);
+    $('stockPreview').src = S.stockPhoto; $('stockPreview').classList.remove('hidden');
+    busy();
+  } catch (err) { fail(err); }
+}
+
+/* OTP */
+$('btnOtp').onclick = () => {
+  if (Date.now() < S.otpCooldown) return toast('Wait a few seconds before resending', 'err');
+  busy('Sending OTP…');
+  api('apiSendOtp', S.token, S.visit.visitId).then(r => {
+    busy(); S.otpCooldown = Date.now() + 30000;
+    $('otpMsg').textContent = 'OTP sent to owner mobile ' + r.sentTo + (r.testOtp ? ' · TEST MODE OTP: ' + r.testOtp : '') + '. Valid 10 minutes.';
+    $('btnOtp').textContent = 'Resend OTP';
+    toast('OTP sent', 'ok');
+  }).catch(fail);
+};
+
+/* Submit */
+function collectLines() {
+  const lines = [];
+  for (const k of skusForVisit()) {
+    const arr = (S.batches[skuKey(k)] || []).filter(x => x.qty !== '');
+    if (!arr.length) continue;
+    for (const x of arr) {
+      if (!/^\d+$/.test(String(x.qty))) throw new Error('Qty must be a whole number for ' + k.name);
+      if (Number(x.qty) > 0 && !x.expiry) throw new Error('Enter expiry date for ' + k.name);
+    }
+    lines.push({ code:k.code, name:k.name, batches:arr.map(x => ({ qty:Number(x.qty), expiry:x.expiry })) });
+  }
+  if (!lines.length) throw new Error('Enter stock for at least one SKU');
+  return lines;
+}
+$('btnSubmit').onclick = async () => {
+  try {
+    const lines = collectLines();
+    const min = (Date.now() - S.visit.checkInAtMs) / 60000;
+    if (min < S.boot.cfg.minMinutes) throw new Error('Minimum ' + S.boot.cfg.minMinutes + ' minutes on site required.');
+    if (S.boot.cfg.requireStockPhoto && !S.stockPhoto) throw new Error('Take the stock / godown photo first');
+    if (!/^\d{4,6}$/.test($('otp').value.trim())) throw new Error('Enter the OTP from the DB owner');
+    busy('Getting check-out location…');
+    const pos = await getBestPosition(S.boot.cfg.minAcc, 25000);
+    busy('Submitting…');
+    const r = await api('apiSubmit', S.token, { visitId:S.visit.visitId, lat:pos.lat, lng:pos.lng, acc:pos.acc, otp:$('otp').value.trim(), lines, stockPhoto:S.stockPhoto });
+    busy(); clearInterval(S.timerId);
+    const cls = r.status === 'Verified' ? 'p-ok' : r.status === 'Flagged' ? 'p-warn' : 'p-bad';
+    $('doneInfo').innerHTML = '<div class="big">Submitted ✓</div>' +
+      '<span class="pill ' + cls + '">' + esc(r.status) + '</span><br><br>' +
+      '<b>' + esc(S.visit.db) + '</b><br>' +
+      r.skuLines + ' SKU(s) · ' + r.totalQty + ' pcs · ' + r.minutes + ' min on site<br>' +
+      (r.nearExpiry ? '<span style="color:var(--bad)">' + r.nearExpiry + ' batch(es) near expiry / expired</span><br>' : '') +
+      (r.flags && r.flags.length ? '<br><span class="timer">Flags: ' + esc(r.flags.join(', ')) + '</span>' : '');
+    S.visit = null;
+    show('scrDone');
+  } catch (err) { fail(err); }
+};
+
+$('btnCancelVisit').onclick = () => {
+  if (!confirmInline()) return;
+  busy('Cancelling…');
+  api('apiCancelVisit', S.token, S.visit.visitId).then(() => {
+    busy(); clearInterval(S.timerId); S.visit = null; toast('Visit cancelled', 'inf'); show('scrSelect');
+  }).catch(fail);
+};
+let cancelArmed = 0;
+function confirmInline() {      // tap twice within 4 s to cancel (no browser dialogs)
+  if (Date.now() - cancelArmed < 4000) return true;
+  cancelArmed = Date.now(); toast('Tap "Cancel this visit" again to confirm', 'err'); return false;
+}
+
+$('btnNew').onclick = () => { $('dbSearch').value = ''; fillDbs(); show('scrSelect'); };
+
+/* ---------- start ---------- */
+(function init() {
+  const t = load('klg_pv_token');
+  if (t) { S.token = t; boot().catch(fail); }
+})();
+</script>
+</body>
+</html>
